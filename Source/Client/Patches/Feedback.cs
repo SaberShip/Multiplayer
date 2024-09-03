@@ -90,10 +90,32 @@ namespace Multiplayer.Client.Patches
     [HarmonyPatch(typeof(Messages), nameof(Messages.Message), new[] { typeof(Message), typeof(bool) })]
     static class SilenceMessagesNotTargetedAtMe
     {
-        static bool Prefix(bool historical)
+        static bool Prefix(Message msg, bool historical)
         {
-            bool cancel = Multiplayer.Client != null && !historical && Multiplayer.ExecutingCmds && !TickPatch.currentExecutingCmdIssuedBySelf;
+            bool cancel = Multiplayer.Client != null && !IsMessageRelevant(msg);
             return !cancel;
+        }
+
+        static bool IsMessageRelevant(Message message) {
+            if (message.lookTargets.IsValid()) {
+                GlobalTargetInfo target = message.lookTargets.PrimaryTarget;
+                if (target.HasThing) {
+                    return target.Thing.Faction == Multiplayer.RealPlayerFaction || 
+                        target.Thing.Map.ParentFaction == Multiplayer.RealPlayerFaction;
+                }
+                else if (target.HasWorldObject) {
+                    return target.WorldObject.Faction == Multiplayer.RealPlayerFaction ||
+                        Find.Maps.Find(map => map.Tile == target.Tile).ParentFaction == Multiplayer.RealPlayerFaction;
+                } else if (target.Tile >= 0) {
+                    return Find.Maps.Find(map => map.Tile == target.Tile).ParentFaction == Multiplayer.RealPlayerFaction;
+                }
+
+                // Default assume target is relevant
+                return true;
+            }
+            
+            // Without a target we must assume the message is relevant
+            return true;
         }
     }
 
