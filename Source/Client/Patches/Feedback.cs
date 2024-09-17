@@ -8,6 +8,7 @@ using RimWorld.Planet;
 using UnityEngine;
 using Verse;
 using Verse.Sound;
+using System.Linq;
 
 namespace Multiplayer.Client.Patches
 {
@@ -88,33 +89,60 @@ namespace Multiplayer.Client.Patches
     }
 
     [HarmonyPatch(typeof(Messages), nameof(Messages.Message), new[] { typeof(Message), typeof(bool) })]
-    static class SilenceMessagesNotTargetedAtMe
+    static class HideMessagesNotTargetedAtMe
     {
-        static bool Prefix(Message msg, bool historical)
+        private static FieldInfo liveMessages = AccessTools.Field(typeof(Messages), "liveMessages");
+
+        private static MethodInfo addMessageToList =
+            typeof(List<Message>).GetMethod(nameof(List<Message>.Add), [typeof(Message)]);
+
+        private static MethodInfo messageRelevant =
+            AccessTools.Method(typeof(HideMessagesNotTargetedAtMe), nameof(IsMessageRelevant));
+
+        static IEnumerable<CodeInstruction> Transpiler(ILGenerator gen, IEnumerable<CodeInstruction> e, MethodBase original)
         {
-            bool cancel = Multiplayer.Client != null && !IsMessageRelevant(msg);
-            return !cancel;
+            List<CodeInstruction> insts = e.ToList();
+            Label outLabel = gen.DefineLabel();
+            Label retLabel = gen.DefineLabel();
+
+            var outJmpFinder = new CodeFinder(original, insts).Start();
+            int firstOut = outJmpFinder.Forward(OpCodes.Brfalse_S);
+            int secondOut = outJmpFinder.Advance(1).Forward(OpCodes.Brfalse_S);
+            insts[firstOut].operand = outLabel;
+            insts[secondOut].operand = outLabel;
+
+            var finder = new CodeFinder(original, insts);
+            int injectPoint = finder.Start().Forward(OpCodes.Ldsfld, liveMessages);
+            insts.Insert(injectPoint,
+                new CodeInstruction(OpCodes.Ldarg_0),
+                new CodeInstruction(OpCodes.Call, messageRelevant),
+                new CodeInstruction(OpCodes.Brfalse, retLabel));
+            insts[injectPoint].labels.Add(outLabel);
+
+            var retFinder = new CodeFinder(original, insts);
+            int ret = retFinder.End().Backward(OpCodes.Ret);
+            insts[ret].labels.Add(retLabel);
+
+            return insts;
         }
 
         static bool IsMessageRelevant(Message message) {
-            if (message.lookTargets.IsValid()) {
-                GlobalTargetInfo target = message.lookTargets.PrimaryTarget;
-                if (target.HasThing) {
-                    return target.Thing.Faction == Multiplayer.RealPlayerFaction || 
-                        target.Thing.Map.ParentFaction == Multiplayer.RealPlayerFaction;
-                }
-                else if (target.HasWorldObject) {
-                    return target.WorldObject.Faction == Multiplayer.RealPlayerFaction ||
-                        Find.Maps.Find(map => map.Tile == target.Tile).ParentFaction == Multiplayer.RealPlayerFaction;
-                } else if (target.Tile >= 0) {
-                    return Find.Maps.Find(map => map.Tile == target.Tile).ParentFaction == Multiplayer.RealPlayerFaction;
-                }
-
-                // Default assume target is relevant
+            if (Multiplayer.Client == null || !Multiplayer.ExecutingCmds || TickPatch.currentExecutingCmdIssuedBySelf)
                 return true;
+
+            else if (message.lookTargets.IsValid()) {
+                GlobalTargetInfo target = message.lookTargets.PrimaryTarget;
+
+                if (target.HasThing) {
+                    Faction faction = target.Thing.Faction;
+
+                    if (faction != null && faction.def.isPlayer) {
+                        return target.Thing.Faction == Multiplayer.RealPlayerFaction;
+                    }
+                }
             }
             
-            // Without a target we must assume the message is relevant
+            // Default assume message is relevant
             return true;
         }
     }
