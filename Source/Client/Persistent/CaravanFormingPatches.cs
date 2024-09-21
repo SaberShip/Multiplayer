@@ -314,7 +314,7 @@ namespace Multiplayer.Client.Persistent
             if (CaravanFormingProxy.drawing == null || CaravanFormingProxy.drawing.Session?.faction == Multiplayer.RealPlayerFaction)
                 return true;
 
-            if (label != "0" && label != "<<" && label != "<" && label != ">" && label != ">>" && label != ">M")
+            if (label != "0" && label != "M<" && label != "<<" && label != "<" && label != ">" && label != ">>" && label != ">M")
                 return true;
 
             GUI.color = Widgets.InactiveColor;

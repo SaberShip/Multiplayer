@@ -294,7 +294,7 @@ namespace Multiplayer.Client
             if (TradingWindow.drawingTrade == null || MpTradeSession.current.NegotiatorFaction == Multiplayer.RealPlayerFaction)
                 return true;
 
-            if (label != "0" && label != "<<" && label != "<" && label != ">" && label != ">>" && label != ">M")
+            if (label != "0" && label != "M<" && label != "<<" && label != "<" && label != ">" && label != ">>" && label != ">M")
                 return true;
 
             GUI.color = Widgets.InactiveColor;
